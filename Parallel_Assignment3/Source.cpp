@@ -176,6 +176,7 @@ void sequential_count_all_words_in_file(const std::vector<std::string>& lines, i
 }
 
 
+// ++++++++++++++++++++++ DISPLAY SECTION ++++++++++++++++++++++
 void display(const std::vector<int>& counters, int totalWords) {
 	std::cout << counters[0] << " Horatio\n";
 	std::cout << counters[1] << " and\n";
