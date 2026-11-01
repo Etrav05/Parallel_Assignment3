@@ -111,9 +111,9 @@ void count_all_words_in_file(int start, int end, int& result,
 
 
 // ---------------------- SEQUENTIAL SECTION ----------------------
-void sequential_count_target_words_in_file(const std::vector<std::string>& targets, 
+void sequential_process_file(const std::vector<std::string>& targets, 
 										   const std::vector<std::string>& lines,
-										   std::vector<int>& counters) {
+										   std::vector<int>& counters, int& result) {
 
 	// Process the line
 	for (int i = 0; i < lines.size(); i++) {
@@ -131,6 +131,11 @@ void sequential_count_target_words_in_file(const std::vector<std::string>& targe
 
 		while (stream >> word) {
 
+			// COUNT WORDS
+			if (word != "'t" && word != "t'") {
+				result++;
+			}
+
 			// CLEAN
 			std::erase_if(word, [](unsigned char c) {
 				return std::ispunct(c);
@@ -140,36 +145,12 @@ void sequential_count_target_words_in_file(const std::vector<std::string>& targe
 				return std::tolower(c);
 				});
 
-			// COUNT
+			// COUNT TARGETS
 			for (size_t target = 0; target < targets.size(); target++) {
 				if (word == targets[target]) {
 					counters[target]++;
 					break;
 				}
-			}
-		}
-	}
-}
-
-void sequential_count_all_words_in_file(const std::vector<std::string>& lines, int& result) {
-	// Process the line
-	for (size_t i = 0; i < lines.size(); i++) {
-		std::string line = lines[i];
-
-		// CLEAN EDGE CASE
-		size_t pos = 0;
-		while ((pos = line.find("--", pos)) != std::string::npos) {
-			line.replace(pos, 2, " ");
-		}
-
-		// SPLIT
-		std::istringstream stream(line);
-		std::string word;
-
-		while (stream >> word) {
-			// COUNT (ignore 't and t')
-			if (word != "'t" && word != "t'") {
-				result++;
 			}
 		}
 	}
@@ -191,6 +172,7 @@ void display_measures(auto seqDuration, auto parDuration, auto poolDuration, int
 	
 	double speedup = d1 / d2;
 
+	std::cout << "MEASURES\n";
 	std::cout << "Seq Execution Time = " << seqDuration << std::endl; 
 	std::cout << "Par Execution Time = " << parDuration << std::endl;
 	std::cout << "           Latency = " << (poolDuration / (double)taskCount) << std::endl;
@@ -226,8 +208,7 @@ int main() {
 	std::vector<int> seqTargetCounters(targetWords.size(), 0);
 	int seqTotal = 0;
 
-	sequential_count_target_words_in_file(std::cref(targetWords), std::cref(lines), std::ref(seqTargetCounters));
-	sequential_count_all_words_in_file(std::cref(lines), seqTotal);
+	sequential_process_file(targetWords, lines, seqTargetCounters, seqTotal);
 	auto stopTime = std::chrono::high_resolution_clock::now();
 	auto seqDuration = std::chrono::duration_cast<std::chrono::milliseconds>(stopTime - startTime);
 
@@ -295,7 +276,6 @@ int main() {
 
 	std::cout << std::endl;
 
-	std::cout << "MEASURES\n";
 	display_measures(seqDuration, parDuration, poolDuration, threadCount, (threadCount * POOL_MULT));
 
 	file.close();
