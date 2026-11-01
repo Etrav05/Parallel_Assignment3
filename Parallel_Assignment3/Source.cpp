@@ -11,6 +11,8 @@
 #define FILE_PATH		"Hamlet.txt"
 #define POOL_MULT		4
 
+
+// ====================== PARALLEL SECTION ====================== 
 std::vector<int> chunk_data(size_t numLines, int chunkCount) {	
 	(int)numLines;
 
@@ -106,7 +108,82 @@ void count_all_words_in_file(int start, int end, int& result,
 	result = localResult; 
 }
 
+
+// ---------------------- SEQUENTIAL SECTION ----------------------
+void sequential_count_target_words_in_file(const std::vector<std::string>& targets, 
+										   const std::vector<std::string>& lines,
+										   std::vector<int>& counters) {
+
+	// Process the line
+	for (int i = 0; i < lines.size(); i++) {
+		std::string line = lines[i];
+
+		// CLEAN EDGE CASE
+		size_t pos = 0;
+		while ((pos = line.find("--", pos)) != std::string::npos) {
+			line.replace(pos, 2, " ");
+		}
+
+		// SPLIT
+		std::istringstream stream(line);
+		std::string word;
+
+		while (stream >> word) {
+
+			// CLEAN
+			std::erase_if(word, [](unsigned char c) {
+				return std::ispunct(c);
+				});
+
+			std::transform(word.begin(), word.end(), word.begin(), [](unsigned char c) {
+				return std::tolower(c);
+				});
+
+			// COUNT
+			for (size_t target = 0; target < targets.size(); target++) {
+				if (word == targets[target]) {
+					counters[target]++;
+					break;
+				}
+			}
+		}
+	}
+}
+
+void count_all_words_in_file(const std::vector<std::string>& lines, int& result) {
+	// Process the line
+	for (size_t i = 0; i < lines.size(); i++) {
+		std::string line = lines[i];
+
+		// CLEAN EDGE CASE
+		size_t pos = 0;
+		while ((pos = line.find("--", pos)) != std::string::npos) {
+			line.replace(pos, 2, " ");
+		}
+
+		// SPLIT
+		std::istringstream stream(line);
+		std::string word;
+
+		while (stream >> word) {
+			// COUNT (ignore 't and t')
+			if (word != "'t" && word != "t'") {
+				result++;
+			}
+		}
+	}
+}
+
+
 void display(const std::vector<int>& counters, int totalWords) {
+	std::cout << counters[0] << " Horatio\n";
+	std::cout << counters[1] << " and\n";
+	std::cout << counters[2] << " Hamlet\n";
+	std::cout << counters[3] << " God\n";
+	std::cout << "Total word count = " << totalWords << std::endl;
+}
+
+void display_measures(const std::vector<int>& counters, int totalWords) {
 	std::cout << counters[0] << " Horatio\n";
 	std::cout << counters[1] << " and\n";
 	std::cout << counters[2] << " Hamlet\n";
@@ -117,6 +194,9 @@ void display(const std::vector<int>& counters, int totalWords) {
 int main() {
 	unsigned int hardware = std::thread::hardware_concurrency();
 	int threadCount = (hardware == 0) ? 4 : static_cast<int>(hardware);
+
+	// TARGETS
+	std::vector<std::string> targetWords = { "horatio", "and", "hamlet", "god" };
 
 	// LOAD AND STORE DATA
 	std::ifstream file(FILE_PATH);
@@ -133,10 +213,16 @@ int main() {
 		lines.push_back(line);
 	}
 
+	// PRE-PHASE - SEQUENTIAL IMPLEMENTATION 
+	std::vector<int> seqTargetCounters(targetWords.size(), 0);
+	int seqTotal = 0;
+
+	sequential_count_target_words_in_file(std::cref(targetWords), std::cref(lines), std::ref(seqTargetCounters));
+	count_all_words_in_file(std::cref(lines), seqTotal);
+
 
 	// PHASE 1 - Targeted word count - Standard parallel threading
-	std::vector<std::string> targetWords = { "horatio", "and", "hamlet", "god" };
-	std::vector<int> targetCounters(targetWords.size(), 0); // horatio, and, hamlet, god
+	std::vector<int> parTargetCounters(targetWords.size(), 0); // horatio, and, hamlet, god
 	
 	std::vector<int> p1Chunks = chunk_data(lines.size(), threadCount);
 	
@@ -146,7 +232,7 @@ int main() {
 	int p1Start = 0;
 	for (int size : p1Chunks) {
 		threads.emplace_back(count_target_words_in_file, p1Start, p1Start + size,
-						std::cref(targetWords), std::ref(targetCounters), 
+						std::cref(targetWords), std::ref(parTargetCounters),
 						std::cref(lines), std::ref(counterLock));
 		p1Start += size;
 	}
@@ -178,12 +264,19 @@ int main() {
 	}
 
 	// SUM & DISPLAY
-	int total = 0;
+	int parTotal = 0;
 	for (int r : results) {
-		total += r;
+		parTotal += r;
 	}
 
-	display(std::cref(targetCounters), total);
+
+	std::cout << "SEQUENTIAL\n";
+	display(std::cref(seqTargetCounters), parTotal);
+
+	std::cout << std::endl;
+
+	std::cout << "PARALLEL\n";
+	display(std::cref(parTargetCounters), seqTotal);
 
 	file.close();
 	return 0;
