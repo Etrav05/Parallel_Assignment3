@@ -6,6 +6,7 @@
 #include <mutex>
 #include <algorithm>
 #include <cctype>
+#include <chrono>
 #include "ThreadPool.h"
 
 #define FILE_PATH		"Hamlet.txt"
@@ -14,10 +15,10 @@
 
 // ====================== PARALLEL SECTION ====================== 
 std::vector<int> chunk_data(size_t numLines, int chunkCount) {	
-	(int)numLines;
+	int n = static_cast<int>(numLines);
 
-	int size = numLines / chunkCount;
-	int r = numLines % chunkCount;
+	int size = n / chunkCount;
+	int r = n % chunkCount;
 
 	std::vector<int> chunks(chunkCount, size);
 
@@ -150,7 +151,7 @@ void sequential_count_target_words_in_file(const std::vector<std::string>& targe
 	}
 }
 
-void count_all_words_in_file(const std::vector<std::string>& lines, int& result) {
+void sequential_count_all_words_in_file(const std::vector<std::string>& lines, int& result) {
 	// Process the line
 	for (size_t i = 0; i < lines.size(); i++) {
 		std::string line = lines[i];
@@ -183,13 +184,19 @@ void display(const std::vector<int>& counters, int totalWords) {
 	std::cout << "Total word count = " << totalWords << std::endl;
 }
 
-void display_measures(const std::vector<int>& counters, int totalWords) {
-	std::cout << counters[0] << " Horatio\n";
-	std::cout << counters[1] << " and\n";
-	std::cout << counters[2] << " Hamlet\n";
-	std::cout << counters[3] << " God\n";
-	std::cout << "Total word count = " << totalWords << std::endl;
+void display_measures(auto seqDuration, auto parDuration, auto poolDuration, int threadCount, int taskCount) {
+	std::chrono::duration<double> d1 = seqDuration;
+	std::chrono::duration<double> d2 = parDuration;
+	
+	double speedup = d1 / d2;
+
+	std::cout << "Seq Execution Time = " << seqDuration << std::endl; 
+	std::cout << "Par Execution Time = " << parDuration << std::endl;
+	std::cout << "           Latency = " << (poolDuration / (double)taskCount) << std::endl;
+	std::cout << "           Speedup = " << speedup << "x" << std::endl;
+	std::cout << "        Efficiency = " << (speedup / threadCount) * 100 << "%" << std::endl;
 }
+
 
 int main() {
 	unsigned int hardware = std::thread::hardware_concurrency();
@@ -214,14 +221,17 @@ int main() {
 	}
 
 	// PRE-PHASE - SEQUENTIAL IMPLEMENTATION 
+	auto startTime = std::chrono::high_resolution_clock::now();
 	std::vector<int> seqTargetCounters(targetWords.size(), 0);
 	int seqTotal = 0;
 
 	sequential_count_target_words_in_file(std::cref(targetWords), std::cref(lines), std::ref(seqTargetCounters));
-	count_all_words_in_file(std::cref(lines), seqTotal);
-
+	sequential_count_all_words_in_file(std::cref(lines), seqTotal);
+	auto stopTime = std::chrono::high_resolution_clock::now();
+	auto seqDuration = std::chrono::duration_cast<std::chrono::milliseconds>(stopTime - startTime);
 
 	// PHASE 1 - Targeted word count - Standard parallel threading
+	startTime = std::chrono::high_resolution_clock::now();
 	std::vector<int> parTargetCounters(targetWords.size(), 0); // horatio, and, hamlet, god
 	
 	std::vector<int> p1Chunks = chunk_data(lines.size(), threadCount);
@@ -243,6 +253,7 @@ int main() {
 
 
 	// PHASE 2 - Total word count - ThreadPooling
+	auto poolTime = std::chrono::high_resolution_clock::now();
 	std::vector<int> p2Chunks = chunk_data(lines.size(), threadCount * POOL_MULT);
 	std::vector<int> results(p2Chunks.size(), 0);
 
@@ -262,6 +273,9 @@ int main() {
 			i++;
 		}
 	}
+	stopTime = std::chrono::high_resolution_clock::now();
+	auto parDuration = std::chrono::duration_cast<std::chrono::milliseconds>(stopTime - startTime);
+	auto poolDuration = std::chrono::duration_cast<std::chrono::milliseconds>(stopTime - poolTime);
 
 	// SUM & DISPLAY
 	int parTotal = 0;
@@ -271,12 +285,17 @@ int main() {
 
 
 	std::cout << "SEQUENTIAL\n";
-	display(std::cref(seqTargetCounters), parTotal);
+	display(std::cref(seqTargetCounters), seqTotal);
 
 	std::cout << std::endl;
 
 	std::cout << "PARALLEL\n";
-	display(std::cref(parTargetCounters), seqTotal);
+	display(std::cref(parTargetCounters), parTotal);
+
+	std::cout << std::endl;
+
+	std::cout << "MEASURES\n";
+	display_measures(seqDuration, parDuration, poolDuration, threadCount, (threadCount * POOL_MULT));
 
 	file.close();
 	return 0;
