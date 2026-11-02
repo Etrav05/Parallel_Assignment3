@@ -1,10 +1,9 @@
 #include <iostream>
 #include <vector>
 #include <fstream>
-#include <sstream>
+#include <string_view>
 #include <string>
 #include <mutex>
-#include <algorithm>
 #include <cctype>
 #include <chrono>
 #include "ThreadPool.h"
@@ -27,6 +26,23 @@ std::vector<int> chunk_data(size_t numLines, int chunkCount) {
 	return chunks;
 }
 
+std::string_view find_word(std::string_view lineView, size_t& pos) {
+	
+	// SKIP WHITESPACE
+	while (pos < lineView.size() && std::isspace(static_cast<unsigned char>(lineView[pos])))
+		pos++;
+
+	if (pos == lineView.size())
+		return "";
+
+	// COMPLETE A WORD
+	size_t wordStart = pos;
+	while (pos < lineView.size() && !std::isspace(static_cast<unsigned char>(lineView[pos]))) // Skiping chars this time
+		pos++;
+
+	return lineView.substr(wordStart, pos - wordStart);
+}
+
 void count_target_words_in_file(int start, int end, 
 								const std::vector<std::string>& targets, 
 								std::vector<int>& counters,
@@ -34,6 +50,7 @@ void count_target_words_in_file(int start, int end,
 								std::mutex& mutex) {
 
 	std::vector<int> localCounters(targets.size(), 0); // horatio, and, hamlet, god
+	std::string cleaned;
 
 	// Process the line
 	for (int i = start; i < end; i++) {
@@ -45,24 +62,26 @@ void count_target_words_in_file(int start, int end,
 			line.replace(pos, 2, " ");
 		}
 		
-		// SPLIT
-		std::istringstream stream(line);
-		std::string word;
+		// READ LINE
+		std::string_view lineView(line);
+		pos = 0;
 
-		while (stream >> word) {
+		while (pos < lineView.size()) {
+
+			// FIND THE NEXT WORD
+			std::string_view word = find_word(lineView, pos);
 
 			// CLEAN
-			std::erase_if(word, [](unsigned char c) { 
-				return std::ispunct(c); 
-				});
-
-			std::transform(word.begin(), word.end(), word.begin(), [](unsigned char c) { 
-				return std::tolower(c); 
-				});
+			cleaned.clear();
+			for (unsigned char c : word) {
+				if (!std::ispunct(c)) {
+					cleaned.push_back(static_cast<char>(std::tolower(c)));
+				}
+			}
 
 			// COUNT
 			for (size_t target = 0; target < targets.size(); target++) {
-				if (word == targets[target]) {
+				if (cleaned == targets[target]) {
 					localCounters[target]++;
 					break;
 				}
@@ -93,14 +112,19 @@ void count_all_words_in_file(int start, int end, int& result,
 			line.replace(pos, 2, " ");
 		}
 
-		// SPLIT
-		std::istringstream stream(line);
-		std::string word;
+		// READ LINE
+		std::string_view lineView(line);
+		pos = 0;
 
-		while (stream >> word) {
+		while (pos < lineView.size()) {
+			// FIND THE NEXT WORD
+			std::string_view word = find_word(lineView, pos);
+
 			// COUNT (ignore 't and t')
-			if (word != "'t" && word != "t'") {
-				localResult++;
+			if (!word.empty()) {
+				if (word != "'t" && word != "t'") {
+					localResult++;
+				}
 			}
 		}
 	}
@@ -111,12 +135,14 @@ void count_all_words_in_file(int start, int end, int& result,
 
 
 // ---------------------- SEQUENTIAL SECTION ----------------------
-void sequential_process_file(const std::vector<std::string>& targets, 
+// Purposly does 2 Phases to mimic the requirements of the parallel solution
+void sequential_count_target_words_in_file(const std::vector<std::string>& targets,
 										   const std::vector<std::string>& lines,
-										   std::vector<int>& counters, int& result) {
-
-	// Process the line
-	for (int i = 0; i < lines.size(); i++) {
+										   std::vector<int>& counters) {
+	std::string cleaned;
+	
+	// PHASE 1 - Target words
+	for (size_t i = 0; i < lines.size(); i++) {
 		std::string line = lines[i];
 
 		// CLEAN EDGE CASE
@@ -125,31 +151,60 @@ void sequential_process_file(const std::vector<std::string>& targets,
 			line.replace(pos, 2, " ");
 		}
 
-		// SPLIT
-		std::istringstream stream(line);
-		std::string word;
+		// READ LINE
+		std::string_view lineView(line);
+		pos = 0;
 
-		while (stream >> word) {
-
-			// COUNT WORDS
-			if (word != "'t" && word != "t'") {
-				result++;
-			}
+		while (pos < lineView.size()) {
+			// FIND THE NEXT WORD
+			std::string_view word = find_word(lineView, pos);
 
 			// CLEAN
-			std::erase_if(word, [](unsigned char c) {
-				return std::ispunct(c);
-				});
-
-			std::transform(word.begin(), word.end(), word.begin(), [](unsigned char c) {
-				return std::tolower(c);
-				});
+			cleaned.clear();
+			for (unsigned char c : word) {
+				if (!std::ispunct(c)) {
+					cleaned.push_back(static_cast<char>(std::tolower(c)));
+				}
+			}
 
 			// COUNT TARGETS
 			for (size_t target = 0; target < targets.size(); target++) {
-				if (word == targets[target]) {
+				if (cleaned == targets[target]) {
 					counters[target]++;
 					break;
+				}
+			}
+		}
+	}
+}
+
+void sequential_count_all_words_in_file(const std::vector<std::string>& targets,
+										const std::vector<std::string>& lines, 
+										int& result) {
+	std::string cleaned;
+
+	// PHASE 2 - Total words
+	for (size_t i = 0; i < lines.size(); i++) {
+		std::string line = lines[i];
+
+		// CLEAN EDGE CASE
+		size_t pos = 0;
+		while ((pos = line.find("--", pos)) != std::string::npos) {
+			line.replace(pos, 2, " ");
+		}
+
+		// READ LINE
+		std::string_view lineView(line);
+		pos = 0;
+
+		while (pos < lineView.size()) {
+			// FIND THE NEXT WORD
+			std::string_view word = find_word(lineView, pos);
+
+			// COUNT (ignore 't and t')
+			if (!word.empty()) {
+				if (word != "'t" && word != "t'") {
+					result++;
 				}
 			}
 		}
@@ -208,9 +263,11 @@ int main() {
 	std::vector<int> seqTargetCounters(targetWords.size(), 0);
 	int seqTotal = 0;
 
-	sequential_process_file(targetWords, lines, seqTargetCounters, seqTotal);
+	sequential_count_target_words_in_file(targetWords, lines, seqTargetCounters);
+	sequential_count_all_words_in_file(targetWords, lines, seqTotal);
+
 	auto stopTime = std::chrono::high_resolution_clock::now();
-	auto seqDuration = std::chrono::duration_cast<std::chrono::milliseconds>(stopTime - startTime);
+	auto seqDuration = std::chrono::duration_cast<std::chrono::duration<double, std::milli>>(stopTime - startTime);
 
 	// PHASE 1 - Targeted word count - Standard parallel threading
 	startTime = std::chrono::high_resolution_clock::now();
@@ -256,8 +313,8 @@ int main() {
 		}
 	}
 	stopTime = std::chrono::high_resolution_clock::now();
-	auto parDuration = std::chrono::duration_cast<std::chrono::milliseconds>(stopTime - startTime);
-	auto poolDuration = std::chrono::duration_cast<std::chrono::milliseconds>(stopTime - poolTime);
+	auto parDuration = std::chrono::duration_cast<std::chrono::duration<double, std::milli>>(stopTime - startTime);
+	auto poolDuration = std::chrono::duration_cast<std::chrono::duration<double, std::milli>>(stopTime - poolTime);
 
 	// SUM & DISPLAY
 	int parTotal = 0;
