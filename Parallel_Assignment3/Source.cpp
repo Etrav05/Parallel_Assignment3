@@ -6,6 +6,7 @@
 #include <mutex>
 #include <cctype>
 #include <chrono>
+#include <algorithm>
 #include "ThreadPool.h"
 
 #define FILE_PATH		"Hamlet.txt"
@@ -24,6 +25,35 @@ std::vector<int> chunk_data(size_t numLines, int chunkCount) {
 	for (int i = 0; i < r; i++) chunks[i]++;
 
 	return chunks;
+}
+
+void prep_line(std::string& line) {
+	size_t pos = 0;
+	
+	while ((pos = line.find("--", pos)) != std::string::npos)
+		line.replace(pos, 2, " ");
+	
+	std::replace_if(line.begin(), line.end(),
+		[](char c) { return c == '/' || c == '<' || c == '>'; }, ' ');
+}
+
+bool counts_as_word(std::string_view word) {
+	if (word.empty()) 
+		return false;
+	
+	// SKIP THE URL
+	if (word.find("://") != std::string_view::npos) 
+		return false;  
+
+	// IGNORE 't AND t' (even with trailing punctuation, e.g. 't? 't,)
+	while (!word.empty() && std::ispunct(static_cast<unsigned char>(word.back())) && word.back() != '\'')
+		word.remove_suffix(1);
+	if (word == "'t" || word == "t'" || word == "T'")
+		return false;
+
+	// SKIP COMPLETE PUNCTUATION WORDS
+	return std::any_of(word.begin(), word.end(),
+		[](unsigned char c) { return std::isalnum(c); }); // Only return letters and numbers
 }
 
 std::string_view find_word(std::string_view lineView, size_t& pos) {
@@ -57,14 +87,11 @@ void count_target_words_in_file(int start, int end,
 		std::string line = lines[i];
 
 		// CLEAN EDGE CASE
-		size_t pos = 0;
-		while ((pos = line.find("--", pos)) != std::string::npos) {
-			line.replace(pos, 2, " ");
-		}
+		prep_line(line);
 		
 		// READ LINE
 		std::string_view lineView(line);
-		pos = 0;
+		size_t pos = 0;
 
 		while (pos < lineView.size()) {
 
@@ -107,25 +134,18 @@ void count_all_words_in_file(int start, int end, int& result,
 		std::string line = lines[i];
 
 		// CLEAN EDGE CASE
-		size_t pos = 0;
-		while ((pos = line.find("--", pos)) != std::string::npos) {
-			line.replace(pos, 2, " ");
-		}
+		prep_line(line);
 
 		// READ LINE
 		std::string_view lineView(line);
-		pos = 0;
+		size_t pos = 0;
 
 		while (pos < lineView.size()) {
 			// FIND THE NEXT WORD
 			std::string_view word = find_word(lineView, pos);
 
-			// COUNT (ignore 't and t')
-			if (!word.empty()) {
-				if (word != "'t" && word != "t'") {
-					localResult++;
-				}
-			}
+			if (counts_as_word(word))
+				localResult++;
 		}
 	}
 
@@ -146,14 +166,11 @@ void sequential_count_target_words_in_file(const std::vector<std::string>& targe
 		std::string line = lines[i];
 
 		// CLEAN EDGE CASE
-		size_t pos = 0;
-		while ((pos = line.find("--", pos)) != std::string::npos) {
-			line.replace(pos, 2, " ");
-		}
+		prep_line(line);
 
 		// READ LINE
 		std::string_view lineView(line);
-		pos = 0;
+		size_t pos = 0;
 
 		while (pos < lineView.size()) {
 			// FIND THE NEXT WORD
@@ -178,35 +195,26 @@ void sequential_count_target_words_in_file(const std::vector<std::string>& targe
 	}
 }
 
-void sequential_count_all_words_in_file(const std::vector<std::string>& targets,
-										const std::vector<std::string>& lines, 
+void sequential_count_all_words_in_file(const std::vector<std::string>& lines, 
 										int& result) {
-	std::string cleaned;
-
 	// PHASE 2 - Total words
 	for (size_t i = 0; i < lines.size(); i++) {
 		std::string line = lines[i];
 
 		// CLEAN EDGE CASE
-		size_t pos = 0;
-		while ((pos = line.find("--", pos)) != std::string::npos) {
-			line.replace(pos, 2, " ");
-		}
+		prep_line(line);
 
 		// READ LINE
 		std::string_view lineView(line);
-		pos = 0;
+		size_t pos = 0;
 
 		while (pos < lineView.size()) {
 			// FIND THE NEXT WORD
 			std::string_view word = find_word(lineView, pos);
 
 			// COUNT (ignore 't and t')
-			if (!word.empty()) {
-				if (word != "'t" && word != "t'") {
-					result++;
-				}
-			}
+			if (counts_as_word(word))
+				result++;
 		}
 	}
 }
@@ -264,7 +272,7 @@ int main() {
 	int seqTotal = 0;
 
 	sequential_count_target_words_in_file(targetWords, lines, seqTargetCounters);
-	sequential_count_all_words_in_file(targetWords, lines, seqTotal);
+	sequential_count_all_words_in_file(lines, seqTotal);
 
 	auto stopTime = std::chrono::high_resolution_clock::now();
 	auto seqDuration = std::chrono::duration_cast<std::chrono::duration<double, std::milli>>(stopTime - startTime);

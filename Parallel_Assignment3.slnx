@@ -3,5 +3,5 @@
     <Platform Name="x64" />
     <Platform Name="x86" />
   </Configurations>
-  <Project Path="Parallel_Assignment3/Parallel_Assignment3.vcxproj" />
+  <Project Path="Parallel_Assignment3/Parallel_Assignment3.vcxproj" Id="dbc43de4-e01f-4f35-8739-566f1b64c405" />
 </Solution>
