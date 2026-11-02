@@ -322,18 +322,17 @@ int main() {
 		parTotal += r;
 	}
 
+	// std::cout << "SEQUENTIAL\n";
+	// display(std::cref(seqTargetCounters), seqTotal);
 
-	std::cout << "SEQUENTIAL\n";
-	display(std::cref(seqTargetCounters), seqTotal);
+	// std::cout << std::endl;
 
-	std::cout << std::endl;
-
-	std::cout << "PARALLEL\n";
+	// std::cout << "PARALLEL\n";
 	display(std::cref(parTargetCounters), parTotal);
 
-	std::cout << std::endl;
+	// std::cout << std::endl;
 
-	display_measures(seqDuration, parDuration, poolDuration, threadCount, (threadCount * POOL_MULT));
+	// display_measures(seqDuration, parDuration, poolDuration, threadCount, (threadCount * POOL_MULT));
 
 	file.close();
 	return 0;
